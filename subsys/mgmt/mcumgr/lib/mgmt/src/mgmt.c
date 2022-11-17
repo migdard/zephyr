@@ -1,19 +1,25 @@
 /*
  * Copyright (c) 2018-2021 mcumgr authors
+ * Copyright (c) 2022 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <zephyr/sys/slist.h>
-#include <zephyr/sys/byteorder.h>
-#include <string.h>
-
 #include "mgmt/mgmt.h"
 #include "smp/smp.h"
 
-static mgmt_on_evt_cb evt_cb;
+#ifdef CONFIG_MCUMGR_MGMT_NOTIFICATION_HOOKS
+#include <zephyr/mgmt/mcumgr/mgmt/callbacks.h>
+#endif
+
 static sys_slist_t mgmt_group_list =
 	SYS_SLIST_STATIC_INIT(&mgmt_group_list);
+
+#if defined(CONFIG_MCUMGR_MGMT_NOTIFICATION_HOOKS)
+static sys_slist_t mgmt_callback_list =
+	SYS_SLIST_STATIC_INIT(&mgmt_callback_list);
+#endif
 
 void
 mgmt_unregister_group(struct mgmt_group *group)
@@ -64,30 +70,55 @@ mgmt_register_group(struct mgmt_group *group)
 	sys_slist_append(&mgmt_group_list, &group->node);
 }
 
-void
-mgmt_ntoh_hdr(struct mgmt_hdr *hdr)
+#if defined(CONFIG_MCUMGR_MGMT_NOTIFICATION_HOOKS)
+void mgmt_callback_register(struct mgmt_callback *callback)
 {
-	hdr->nh_len = sys_be16_to_cpu(hdr->nh_len);
-	hdr->nh_group = sys_be16_to_cpu(hdr->nh_group);
+	sys_slist_append(&mgmt_callback_list, &callback->node);
 }
 
-void
-mgmt_hton_hdr(struct mgmt_hdr *hdr)
+void mgmt_callback_unregister(struct mgmt_callback *callback)
 {
-	hdr->nh_len = sys_cpu_to_be16(hdr->nh_len);
-	hdr->nh_group = sys_cpu_to_be16(hdr->nh_group);
+	(void)sys_slist_find_and_remove(&mgmt_callback_list, &callback->node);
 }
 
-void
-mgmt_register_evt_cb(mgmt_on_evt_cb cb)
+int32_t mgmt_callback_notify(uint32_t event, void *data, size_t data_size)
 {
-	evt_cb = cb;
-}
+	sys_snode_t *snp, *sns;
+	bool failed = false;
+	bool abort_more = false;
+	int32_t rc;
+	int32_t return_rc = MGMT_ERR_EOK;
+	uint16_t group = MGMT_EVT_GET_GROUP(event);
 
-void
-mgmt_evt(uint8_t opcode, uint16_t group, uint8_t id, void *arg)
-{
-	if (evt_cb) {
-		evt_cb(opcode, group, id, arg);
+	/*
+	 * Search through the linked list for entries that have registered for this event and
+	 * notify them, the first handler to return an error code will have this error returned
+	 * to the calling function, errors returned by additional handlers will be ignored. If
+	 * all notification handlers return MGMT_ERR_EOK then access will be allowed and no error
+	 * will be returned to the calling function. The status of if a previous handler has
+	 * returned an error is provided to the functions through the failed variable, and a
+	 * handler function can set abort_more to true to prevent calling any further handlers.
+	 */
+	SYS_SLIST_FOR_EACH_NODE_SAFE(&mgmt_callback_list, snp, sns) {
+		struct mgmt_callback *loop_group =
+			CONTAINER_OF(snp, struct mgmt_callback, node);
+
+		if (loop_group->event_id == event || loop_group->event_id == MGMT_EVT_OP_ALL ||
+		    (MGMT_EVT_GET_GROUP(loop_group->event_id) == group &&
+		     MGMT_EVT_GET_ID(loop_group->event_id) == MGMT_EVT_OP_ID_ALL)) {
+			rc = loop_group->callback(event, return_rc, &abort_more, data, data_size);
+
+			if (rc != MGMT_ERR_EOK && failed == false) {
+				failed = true;
+				return_rc = rc;
+			}
+
+			if (abort_more == true) {
+				break;
+			}
+		}
 	}
+
+	return return_rc;
 }
+#endif

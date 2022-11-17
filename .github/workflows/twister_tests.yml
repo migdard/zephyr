@@ -5,12 +5,18 @@ name: Twister TestSuite
 
 on:
   push:
+    branches:
+    - main
+    - v*-branch
     paths:
     - 'scripts/pylib/twister/**'
     - 'scripts/twister'
     - 'scripts/tests/twister/**'
     - '.github/workflows/twister_tests.yml'
   pull_request:
+    branches:
+    - main
+    - v*-branch
     paths:
     - 'scripts/pylib/twister/**'
     - 'scripts/twister'
@@ -48,5 +54,6 @@ jobs:
         ZEPHYR_BASE: ./
         ZEPHYR_TOOLCHAIN_VARIANT: zephyr
       run: |
+        west init -l . || true
         echo "Run twister tests"
         PYTHONPATH=./scripts/tests pytest ./scripts/tests/twister

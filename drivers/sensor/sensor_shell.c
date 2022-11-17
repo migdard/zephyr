@@ -68,7 +68,7 @@ const char *sensor_channel_name[SENSOR_CHAN_ALL] = {
 	[SENSOR_CHAN_GAUGE_FULL_CHARGE_CAPACITY] =	"gauge_full_cap",
 	[SENSOR_CHAN_GAUGE_REMAINING_CHARGE_CAPACITY] = "gauge_remaining_cap",
 	[SENSOR_CHAN_GAUGE_NOM_AVAIL_CAPACITY] =	"gauge_nominal_cap",
-	[SENSOR_CHAN_GAUGE_FULL_AVAIL_CAPACITY] = "gauge_full_cap",
+	[SENSOR_CHAN_GAUGE_FULL_AVAIL_CAPACITY] = "gauge_full_avail_cap",
 	[SENSOR_CHAN_GAUGE_AVG_POWER] =		"gauge_avg_power",
 	[SENSOR_CHAN_GAUGE_STATE_OF_HEALTH] =	"gauge_state_of_health",
 	[SENSOR_CHAN_GAUGE_TIME_TO_EMPTY] =	"gauge_time_to_empty",
@@ -216,12 +216,16 @@ static int cmd_get_sensor_info(const struct shell *sh, size_t argc,
 	ARG_UNUSED(argv);
 
 #ifdef CONFIG_SENSOR_INFO
+	const char *null_str = "(null)";
+
 	STRUCT_SECTION_FOREACH(sensor_info, sensor) {
 		shell_print(sh,
-			    "device name: %s, vendor: [%s], model: [%s], "
-			    "friendly name: [%s]",
-			    sensor->dev->name, sensor->vendor, sensor->model,
-			    sensor->friendly_name);
+			    "device name: %s, vendor: %s, model: %s, "
+			    "friendly name: %s",
+			    sensor->dev->name,
+			    sensor->vendor ? sensor->vendor : null_str,
+			    sensor->model ? sensor->model : null_str,
+			    sensor->friendly_name ? sensor->friendly_name : null_str);
 	}
 	return 0;
 #else
